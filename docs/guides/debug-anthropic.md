@@ -1,0 +1,90 @@
+# Debug Anthropic with TraceLoom
+
+The Anthropic Python SDK uses httpx to communicate with the Claude API. TraceLoom captures every API call, letting you inspect message payloads, tool definitions, token usage, and streaming responses in the dashboard.
+
+## Setup
+
+```bash
+uv sync --frozen
+traceloom-server  # start the dashboard
+```
+
+Then run your script with `traceloom run`:
+
+```bash
+traceloom run my_claude_app.py
+```
+
+The Anthropic SDK uses `httpx` under the hood. TraceLoom captures all API calls automatically. No code changes needed.
+
+## Scenario: debugging a tool-use loop that makes too many API calls
+
+You're building an agent with Claude's tool use, and it's making more API calls than expected. Is Claude calling tools unnecessarily? Is the loop terminating correctly?
+
+```python
+client = anthropic.Anthropic()
+messages = [{"role": "user", "content": "What's the weather in Paris?"}]
+
+while True:
+    response = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        messages=messages,
+        tools=tools,
+        max_tokens=1024,
+    )
+    if response.stop_reason == "end_turn":
+        break
+    # process tool calls and continue...
+```
+
+### Debug in the dashboard
+
+Open the TraceLoom dashboard. You'll see every `POST` to `api.anthropic.com/v1/messages`:
+
+![TraceLoom dashboard showing captured Anthropic API calls](assets/debug-anthropic-dashboard.png)
+
+- **Request bodies**: see how the `messages` array grows with each loop iteration. Are previous tool results being appended correctly?
+- **Response bodies**: check `stop_reason` for each response. Is Claude returning `tool_use` when it should be returning `end_turn`?
+- **Token usage**: each response includes `usage.input_tokens` and `usage.output_tokens`. Watch how input tokens grow as the conversation gets longer.
+- **Timeline order**: the dashboard shows requests in order, so you can trace the exact sequence of the agent loop.
+
+### The LLM conversation view
+
+For Messages API calls, TraceLoom detects the shape and defaults to an **LLM** tab that renders the request and response as a conversation instead of raw JSON:
+
+![TraceLoom LLM conversation view for an Anthropic Messages call](assets/debug-anthropic-llm.png)
+
+- **System prompt and tools** are lifted to the top of the view, so a long system prompt or a big `tools` array no longer buries the actual messages.
+- **Messages** render as labeled turns. `tool_use` blocks become tool-call cards with their JSON input, `tool_result` blocks become result cards, and `thinking` blocks render inline (muted), so a whole tool-use loop reads top to bottom.
+- **Model, stop reason, and token usage** (including cache read/write) sit in a compact header strip on the response.
+
+Streaming responses are reassembled into the same view. The **Tree** and **Raw** tabs remain available for the exact payload.
+
+### Debug with an AI agent
+
+If you use [Claude Code](https://claude.ai/code) or another AI coding tool, the `/traceloom` skill can query captured events and cross-reference them with your source code. Install it once:
+
+```bash
+Copy `skills/traceloom/SKILL.md` into your agent's skills directory.
+```
+
+Then ask your agent:
+
+```
+/traceloom
+My Claude tool-use loop is making too many API calls
+```
+
+![Claude Code session using traceloom to diagnose excessive API calls](assets/debug-anthropic-claude.png)
+
+The skill is also invoked automatically when your agent recognizes a debugging question, but calling `/traceloom` explicitly gives the best results. See [AI Agent Skills](../ai-skills.md) for compatible tools.
+
+## Tips
+
+- **Streaming**: When using `client.messages.stream()`, TraceLoom captures the full response body. You can see the complete output even though your code consumed it as server-sent events.
+- **Token counting**: Each response's `usage` field is in the response body. Compare `input_tokens` across requests to understand how your context window fills up.
+- **System prompts**: The system prompt is part of the request body. If you're debugging unexpected Claude behavior, check that the system prompt in the captured request matches what you intended.
+- **Rate limits**: Anthropic returns rate limit headers (`anthropic-ratelimit-requests-remaining`, etc.) in every response. These are visible in the response headers panel.
+- **Retries**: The Anthropic SDK retries on overloaded (529) and rate limit (429) errors. Each attempt shows up separately in the timeline.
+
+--8<-- "includes/guide-next-steps.md"

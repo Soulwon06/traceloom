@@ -1,0 +1,101 @@
+"""Monkey-patch for the `requests` library."""
+
+import logging
+import time
+from urllib.parse import urlparse
+
+from traceloom.capture import serialize_request_error, serialize_request_response
+from traceloom.config import TraceLoomConfig
+from traceloom.hierarchy import (
+    activate_context,
+    start_http_request,
+)
+from traceloom.transport import send_http
+from traceloom.utils import redact_query_params
+
+logger = logging.getLogger(__name__)
+
+
+def patch_requests(config: TraceLoomConfig) -> None:
+    """Patch requests.Session.send to capture outgoing HTTP traffic."""
+    try:
+        import requests  # noqa: PLC0415 -- optional dependency
+    except ImportError:
+        logger.debug("skipped requests patch (not installed)")
+        return
+
+    original_send = requests.Session.send
+
+    def patched_send(self, prepared_request, **kwargs):
+        host = urlparse(prepared_request.url).hostname or ""
+
+        if not config.should_capture(host):
+            logger.debug(
+                "skipped %s %s (ignored host)",
+                prepared_request.method,
+                host,
+            )
+            return original_send(self, prepared_request, **kwargs)
+
+        context = start_http_request(host)
+        with activate_context(context):
+            start = time.monotonic()
+            try:
+                response = original_send(self, prepared_request, **kwargs)
+            except Exception as error:
+                duration = time.monotonic() - start
+                try:
+                    payload = serialize_request_error(
+                        config=config,
+                        method=prepared_request.method or "GET",
+                        url=prepared_request.url,
+                        request_headers=dict(prepared_request.headers),
+                        request_body=prepared_request.body,
+                        error=error,
+                        duration_s=duration,
+                        library="requests",
+                    )
+                    send_http(payload, context=context)
+                    logger.debug(
+                        "captured %s %s via requests (%s)",
+                        prepared_request.method,
+                        redact_query_params(
+                            prepared_request.url, config.redact_query_params
+                        ),
+                        type(error).__name__,
+                    )
+                except Exception as capture_error:
+                    logger.debug("failed to capture request: %s", capture_error)
+                raise
+
+            duration = time.monotonic() - start
+
+            try:
+                payload = serialize_request_response(
+                    config=config,
+                    method=prepared_request.method or "GET",
+                    url=prepared_request.url,
+                    request_headers=dict(prepared_request.headers),
+                    request_body=prepared_request.body,
+                    status_code=response.status_code,
+                    response_headers=dict(response.headers),
+                    response_body=response.content,
+                    duration_s=duration,
+                    library="requests",
+                )
+                send_http(payload, context=context)
+                logger.debug(
+                    "captured %s %s via requests (%d)",
+                    prepared_request.method,
+                    redact_query_params(
+                        prepared_request.url, config.redact_query_params
+                    ),
+                    response.status_code,
+                )
+            except Exception as err:
+                logger.debug("failed to capture request: %s", err)
+
+            return response
+
+    requests.Session.send = patched_send  # type: ignore[assignment]
+    logger.debug("patched requests.Session.send")

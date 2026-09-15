@@ -1,0 +1,14 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "TraceLoom",
+      "description": "Skills for setting up TraceLoom and debugging captured application activity.",
+      "skills": [
+        "traceloom",
+        "traceloom-setup"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+# Worktrunk provisioning shared by TraceLoom contributors.
+#
+# Worktree paths remain a user preference. With Worktrunk's default, new
+# worktrees live beside this checkout, for example ../traceloom.feature-name.
+# Copy local configuration before installing dependencies that may use it.
+[[pre-start]]
+config = "wt step copy-ignored --require-include"
+
+# These installs are independent, so Worktrunk can run them concurrently.
+[[pre-start]]
+python = "uv sync"
+frontend = "cd frontend && npm ci"

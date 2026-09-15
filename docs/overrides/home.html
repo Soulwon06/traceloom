@@ -1,0 +1,632 @@
+{% extends "main.html" %}
+
+{% block tabs %}
+  {{ super() }}
+
+  <style>
+    /* The default translucent header works on light documentation pages, but
+       dark landing-page content shows through it. Keep it opaque here. */
+    .md-header {
+      background-color: var(--md-default-bg-color);
+      backdrop-filter: none;
+    }
+    .md-tabs {
+      background-color: transparent;
+      backdrop-filter: none;
+    }
+
+    /* Hide default page elements on home */
+    .md-main__inner { margin: 0; }
+    .md-content { display: none; }
+    /* Hide the sidebars only where they're inline columns, not where they're
+       slide-in drawers — otherwise the mobile hamburger menu only shows the
+       overlay (dimmed/blurred page) with no navigation drawer behind it. */
+    @media screen and (min-width: 60em) {
+      .md-sidebar--secondary { display: none; }
+    }
+    @media screen and (min-width: 76.25em) {
+      .md-sidebar--primary { display: none; }
+    }
+
+    /* ── Hero ── */
+    .hero {
+      padding: 5rem 1rem 3rem;
+      text-align: center;
+      background: linear-gradient(135deg, #2A2A2E, #3a3a40);
+      color: white;
+    }
+    .hero-title {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .hero-title img {
+      width: 72px;
+      height: 72px;
+    }
+    .hero-title h1 {
+      font-size: 3rem;
+      margin: 0;
+      font-weight: 700;
+    }
+    .hero .tagline {
+      font-size: 1.3rem;
+      opacity: 0.92;
+      max-width: 560px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.5;
+    }
+    .hero-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 2.5rem;
+    }
+    .hero-buttons a {
+      padding: 0.75rem 2rem;
+      border-radius: 4px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    .hero-buttons .primary {
+      background: #FFA600;
+      color: #2A2A2E;
+    }
+    .hero-buttons .primary:hover {
+      background: #FFB833;
+    }
+    .hero-buttons .secondary {
+      border: 2px solid rgba(255, 255, 255, 0.7);
+      color: white;
+    }
+    .hero-buttons .secondary:hover {
+      border-color: #FFA600;
+      color: #FFA600;
+    }
+    .install-bar {
+      display: inline-block;
+      background: #2A2A2E;
+      color: white;
+      padding: 0.75rem 2rem;
+      border-radius: 6px;
+      font-family: var(--md-code-font-family);
+      font-size: 0.95rem;
+      letter-spacing: 0.02em;
+      border: 1px solid rgba(255, 166, 0, 0.3);
+    }
+    .install-bar .prompt {
+      opacity: 0.5;
+      margin-right: 0.3em;
+    }
+    .hero-screenshot {
+      max-width: 900px;
+      margin: 2.5rem auto 0;
+    }
+    .hero-screenshot img {
+      width: 100%;
+      height: auto;
+      display: block;
+      filter: drop-shadow(0 8px 30px rgba(0, 0, 0, 0.35));
+    }
+
+    /* ── Features ── */
+    .features-section {
+      background: var(--md-default-bg-color);
+      padding: 4rem 1rem;
+    }
+    .features-section h2 {
+      text-align: center;
+      font-size: 1.8rem;
+      margin-bottom: 2.5rem;
+    }
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .features.two-col {
+      grid-template-columns: repeat(2, 1fr);
+      max-width: 900px;
+    }
+    .feature {
+      background: var(--md-code-bg-color);
+      border-radius: 8px;
+      padding: 2rem 1.5rem;
+    }
+    .feature h3 {
+      font-size: 1.15rem;
+      margin: 0 0 0.75rem;
+      color: #2A2A2E;
+    }
+    [data-md-color-scheme="slate"] .feature h3 {
+      color: #FFA600;
+    }
+    .feature p {
+      font-size: 0.95rem;
+      opacity: 0.8;
+      line-height: 1.65;
+      margin: 0;
+    }
+    @media (max-width: 768px) {
+      .features,
+      .features.two-col { grid-template-columns: 1fr; }
+    }
+    .feature .learn-more {
+      display: inline-block;
+      margin-top: 0.9rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #FFA600;
+    }
+
+    /* ── Docs cards ── */
+    .docs-section {
+      background: var(--md-default-bg-color);
+      border-top: 1px solid var(--md-default-fg-color--lightest);
+      padding: 4rem 1rem;
+    }
+    .docs-section h2 {
+      text-align: center;
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem;
+    }
+    .docs-section .subtitle {
+      text-align: center;
+      opacity: 0.7;
+      font-size: 1rem;
+      margin-bottom: 2.5rem;
+    }
+    a.feature {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      border: 1px solid transparent;
+      transition: border-color 0.2s;
+    }
+    a.feature:hover {
+      border-color: #FFA600;
+      color: inherit;
+    }
+    .docs-more {
+      text-align: center;
+      margin-top: 2.5rem;
+      font-size: 0.95rem;
+      opacity: 0.85;
+    }
+    .docs-more a { color: #FFA600; }
+    .docs-more .sep { opacity: 0.4; margin: 0 0.6rem; }
+
+    /* ── Steps ── */
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      max-width: 620px;
+      margin: 0 auto 2.5rem;
+    }
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.85rem;
+      text-align: left;
+    }
+    .step-num {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #FFA600;
+      color: #2A2A2E;
+      font-weight: 700;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+    }
+    .step-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      padding-top: 0.2rem;
+    }
+    .step-label {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    .step code {
+      font-size: 0.88rem;
+      opacity: 0.6;
+      color: inherit;
+      white-space: nowrap;
+    }
+
+    /* ── Integrations strip ── */
+    .integrations-section {
+      background: #2A2A2E;
+      padding: 3.5rem 1rem;
+      text-align: center;
+      color: white;
+    }
+    .integrations-section h2 {
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem;
+    }
+    .integrations-section .subtitle {
+      opacity: 0.7;
+      font-size: 1rem;
+      margin-bottom: 2.5rem;
+    }
+    .integrations-grid {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .integration-card {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 0.7rem 1.2rem;
+      font-size: 0.95rem;
+      color: white;
+      transition: border-color 0.2s;
+      text-decoration: none;
+    }
+    .integration-card:hover {
+      border-color: #FFA600;
+      color: white;
+    }
+    .integration-card .ic-icon {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    /* ── Code sample ── */
+    .code-section {
+      padding: 4rem 1rem;
+      background: var(--md-default-bg-color);
+    }
+    .code-section h2 {
+      text-align: center;
+      font-size: 1.8rem;
+      margin-bottom: 2rem;
+      color: #FFA600;
+    }
+    .code-section .code-wrap {
+      width: fit-content;
+      margin: 0 auto;
+    }
+    .code-section pre {
+      border-radius: 10px;
+      font-size: 0.9rem;
+      padding: 1.5rem !important;
+      margin: 0;
+      white-space: pre;
+    }
+
+    /* ── FAQ ── */
+    .faq-section {
+      background: #2A2A2E;
+      padding: 4rem 1rem;
+      color: white;
+    }
+    .faq-section h2 {
+      text-align: center;
+      font-size: 1.8rem;
+      margin-bottom: 2.5rem;
+    }
+    .faq-list {
+      max-width: 700px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .faq-list details {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .faq-list details:first-child {
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .faq-list summary {
+      cursor: pointer;
+      font-size: 1.05rem;
+      font-weight: 600;
+      padding: 1.1rem 0;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .faq-list summary::-webkit-details-marker { display: none; }
+    .faq-list summary::after {
+      content: "+";
+      font-size: 1.4rem;
+      font-weight: 300;
+      opacity: 0.6;
+      transition: transform 0.2s;
+    }
+    .faq-list details[open] summary::after {
+      content: "\2212";
+    }
+    .faq-list details p {
+      margin: 0 0 1.1rem;
+      opacity: 0.8;
+      font-size: 0.95rem;
+      line-height: 1.65;
+    }
+  </style>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-title">
+      <img src="assets/logo-dark.png" alt="TraceLoom logo">
+      <h1>TraceLoom</h1>
+    </div>
+    <p class="tagline">Debug your Python app locally. HTTP traffic, pytest results, logs, and exceptions in one dashboard. Zero code changes.</p>
+    <div class="hero-buttons">
+      <a href="getting-started/" class="primary">Get Started</a>
+    </div>
+    <div class="install-bar">
+      <span class="prompt">$</span> uv sync --frozen
+    </div>
+    <div class="hero-screenshot">
+      <img src="assets/screenshot.png" alt="TraceLoom dashboard showing a pytest hierarchy with a nested HTTP request">
+    </div>
+  </section>
+
+  <!-- Why TraceLoom -->
+  <section class="features-section">
+    <h2>Why TraceLoom?</h2>
+    <div class="features two-col">
+      <div class="feature">
+        <h3>Zero code changes</h3>
+        <p>Prefix any command with <code>traceloom run</code> to capture HTTP requests, pytest results, exceptions, and logs. No imports or init calls.</p>
+        <a class="learn-more" href="getting-started/">Getting started &rarr;</a>
+      </div>
+      <div class="feature">
+        <h3>Unified timeline</h3>
+        <p>HTTP traffic, pytest results, log records, and crash tracebacks in one scrollable view. Filter by type or search across every event.</p>
+        <a class="learn-more" href="data-model/">Hierarchy and data model &rarr;</a>
+      </div>
+      <div class="feature">
+        <h3>Full-stack visibility</h3>
+        <p>See outgoing API calls from <code>requests</code>, <code>httpx</code>, <code>aiohttp</code>, <code>grpc</code>, and <code>botocore</code>. TraceLoom also captures incoming FastAPI and Django requests, pytest results, Python logs, and unhandled exceptions.</p>
+        <a class="learn-more" href="guides/">Integration guides &rarr;</a>
+      </div>
+      <div class="feature">
+        <h3>LLM-aware</h3>
+        <p>Calls to the OpenAI, Anthropic, and Gemini APIs render as a readable conversation instead of a wall of JSON. You see the system prompt, tool calls, and token usage at a glance.</p>
+        <a class="learn-more" href="guides/debug-openai/">Debug the OpenAI SDK &rarr;</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Documentation -->
+  <section class="docs-section">
+    <h2>Explore the docs</h2>
+    <p class="subtitle">Start with your first capture or jump to the reference you need.</p>
+    <div class="features">
+      <a class="feature" href="getting-started/">
+        <h3>Getting started</h3>
+        <p>Install the client and server, run your first command, and inspect your first captured event.</p>
+        <span class="learn-more">Start here &rarr;</span>
+      </a>
+      <a class="feature" href="guides/">
+        <h3>Integration guides</h3>
+        <p>Follow setup and debugging walkthroughs for supported libraries, SDKs, and frameworks.</p>
+        <span class="learn-more">Browse guides &rarr;</span>
+      </a>
+      <a class="feature" href="query/">
+        <h3>Query captured events</h3>
+        <p>Filter captured events or follow new ones from a running command with <code>traceloom query</code>.</p>
+        <span class="learn-more">Query events &rarr;</span>
+      </a>
+      <a class="feature" href="configuration/">
+        <h3>Configuration</h3>
+        <p>Find every CLI flag, <code>TRACELOOM_*</code> environment variable, and <code>init()</code> parameter.</p>
+        <span class="learn-more">See all options &rarr;</span>
+      </a>
+      <a class="feature" href="data-model/">
+        <h3>Hierarchy and data model</h3>
+        <p>See how sessions, apps, test files, and events nest, and what each captured event contains.</p>
+        <span class="learn-more">Understand the model &rarr;</span>
+      </a>
+      <a class="feature" href="api/">
+        <h3>HTTP API</h3>
+        <p>Read and filter captured events from your own scripts through the server's JSON API.</p>
+        <span class="learn-more">Read the API docs &rarr;</span>
+      </a>
+    </div>
+    <p class="docs-more">
+      <a href="ai-skills/">AI Agent Skills</a>
+      <span class="sep">·</span>
+      <a href="keyboard-shortcuts/">Keyboard shortcuts</a>
+      <span class="sep">·</span>
+      <a href="changelog/">Changelog</a>
+    </p>
+  </section>
+
+  <!-- AI Agent Skills -->
+  <section class="features-section" style="padding-top: 0;">
+    <h2>AI Agent Skills</h2>
+    <div class="features two-col">
+      <div class="feature">
+        <h3><a href="ai-skills/#traceloom-setup-project-integration" style="color: inherit; text-decoration: none;">/traceloom-setup</a></h3>
+        <p>Your AI agent detects your stack, installs TraceLoom, and wires up <code>traceloom run</code> in your workflow.</p>
+        <p style="margin-top: 0.75rem;"><a href="ai-skills/#traceloom-setup-project-integration" style="color: #FFA600;">Learn more &rarr;</a></p>
+      </div>
+      <div class="feature">
+        <h3><a href="ai-skills/#traceloom-debug-with-captured-events" style="color: inherit; text-decoration: none;">/traceloom</a></h3>
+        <p>Your AI agent queries captured events to diagnose failures: API errors, crashes, and log patterns.</p>
+        <p style="margin-top: 0.75rem;"><a href="ai-skills/#traceloom-debug-with-captured-events" style="color: #FFA600;">Learn more &rarr;</a></p>
+      </div>
+    </div>
+    <div class="hero-screenshot" style="max-width: 700px; margin-top: 2.5rem;">
+      <img src="assets/claude-code-screenshot.png" alt="Claude Code session using the traceloom skill to diagnose a 500 error">
+    </div>
+    <p style="text-align: center; margin-top: 2rem; font-size: 1.05rem; opacity: 0.85;">
+      Works with Claude Code, Cursor, GitHub Copilot, and
+      <a href="https://skills.sh/" style="color: #FFA600;">20+ AI coding tools</a>.
+    </p>
+    <div style="text-align: center; margin-top: 1rem;">
+      <div class="install-bar">
+        <span class="prompt">$</span> copy skills/traceloom/SKILL.md to your agent's skills directory
+      </div>
+    </div>
+  </section>
+
+  <!-- Works With -->
+  <section class="integrations-section">
+    <h2>Works with</h2>
+    <p class="subtitle">Outgoing HTTP and RPC libraries (auto-patched)</p>
+    <div class="integrations-grid">
+      <a class="integration-card" href="guides/debug-requests/">
+        <img class="ic-icon" src="assets/logos/requests.svg" alt="requests"> requests
+      </a>
+      <a class="integration-card" href="guides/debug-httpx/">
+        <img class="ic-icon" src="assets/logos/httpx.svg" alt="httpx"> httpx
+      </a>
+      <a class="integration-card" href="guides/debug-aiohttp/">
+        <img class="ic-icon" src="assets/logos/aiohttp.svg" alt="aiohttp"> aiohttp
+      </a>
+      <a class="integration-card" href="guides/debug-grpc/">
+        <img class="ic-icon" src="assets/logos/grpc.svg" alt="gRPC"> gRPC
+      </a>
+      <a class="integration-card" href="guides/debug-boto3/">
+        <img class="ic-icon" src="assets/logos/aws.svg" alt="boto3"> boto3 / AWS
+      </a>
+      <a class="integration-card" href="guides/debug-google-cloud/">
+        <img class="ic-icon" src="assets/logos/googlecloud.svg" alt="Google Cloud"> Google Cloud
+      </a>
+      <a class="integration-card" href="guides/debug-openai/">
+        <img class="ic-icon" src="assets/logos/openai.svg" alt="OpenAI"> OpenAI SDK
+      </a>
+      <a class="integration-card" href="guides/debug-anthropic/">
+        <img class="ic-icon" src="assets/logos/anthropic.svg" alt="Anthropic"> Anthropic SDK
+      </a>
+      <a class="integration-card" href="guides/debug-gemini/">
+        <img class="ic-icon" src="assets/logos/gemini.svg" alt="Google Gemini"> Gemini SDK
+      </a>
+      <a class="integration-card" href="guides/debug-stripe/">
+        <img class="ic-icon" src="assets/logos/stripe.svg" alt="Stripe"> Stripe SDK
+      </a>
+    </div>
+    <p class="subtitle" style="margin-top: 2.5rem;">Server frameworks (incoming request capture)</p>
+    <div class="integrations-grid">
+      <a class="integration-card" href="guides/debug-fastapi/">
+        <img class="ic-icon" src="assets/logos/fastapi.svg" alt="FastAPI"> FastAPI
+      </a>
+      <a class="integration-card" href="guides/debug-django/">
+        <img class="ic-icon" src="assets/logos/django.svg" alt="Django"> Django
+      </a>
+    </div>
+    <p class="subtitle" style="margin-top: 2.5rem;">Test frameworks (bundled plugin)</p>
+    <div class="integrations-grid">
+      <a class="integration-card" href="guides/debug-pytest/">
+        <img class="ic-icon" src="assets/logos/pytest.svg" alt="pytest"> pytest
+      </a>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="code-section">
+    <h2>How it works</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-label">Install</div>
+          <code>uv sync --frozen</code>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-label">Start the server</div>
+          <code>traceloom-server</code>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-label">Run your code</div>
+          <code>traceloom run my_app.py</code>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="step-label">Browse requests, tests, logs &amp; exceptions</div>
+          <code>http://localhost:5110</code>
+        </div>
+      </div>
+    </div>
+    <div class="code-wrap">
+      <div class="highlight">
+        <pre><code class="language-bash"><span class="c1"># Run any Python script or command</span>
+<span class="nv">$ </span>traceloom run my_app.py
+<span class="nv">$ </span>traceloom run pytest tests/
+<span class="nv">$ </span>traceloom run uvicorn app:app
+
+<span class="c1"># Enable log capture</span>
+<span class="nv">$ </span>traceloom run --capture-logs --log-level INFO my_app.py
+
+<span class="c1"># Filter to specific hosts</span>
+<span class="nv">$ </span>traceloom run --capture-host api.stripe.com my_app.py</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="faq-section">
+    <h2>Frequently asked questions</h2>
+    <div class="faq-list">
+      <details>
+        <summary>Does TraceLoom add latency to my requests?</summary>
+        <p>TraceLoom doesn't send data synchronously from your application's HTTP call or pytest hook. The hook queues capture data, and a background thread sends it to the server.</p>
+      </details>
+      <details>
+        <summary>What does it capture exactly?</summary>
+        <p>TraceLoom captures outgoing HTTP requests and responses (method, URL, headers, body, status, duration), incoming FastAPI and Django requests (path, status, route, client IP), pytest results (status, fixtures, timings, failures), Python log records (level, logger, message, source location), and unhandled exceptions (type, traceback, stack frames). Everything appears in a single timeline.</p>
+      </details>
+      <details>
+        <summary>Does it capture sensitive data?</summary>
+        <p>Authorization and cookie headers are redacted by default. You can configure additional headers to redact or filter specific hosts via the <code>ignore_hosts</code> option.</p>
+      </details>
+      <details>
+        <summary>Do I need to modify my code?</summary>
+        <p>No. <code>traceloom run my_app.py</code> activates TraceLoom before your code runs. No imports or init calls needed. The only exception is incoming request capture (FastAPI or Django), which requires adding one middleware line. Instrumentation propagates to subprocesses, so <code>traceloom run gunicorn app:app</code> also captures traffic from worker processes.</p>
+      </details>
+      <details>
+        <summary>Does it work with async code?</summary>
+        <p>Yes. TraceLoom patches <code>httpx.AsyncClient</code>, <code>aiohttp.ClientSession</code>, and async gRPC channels. The FastAPI middleware is a native ASGI middleware. Django middleware works with both sync and async views.</p>
+      </details>
+      <details>
+        <summary>What about production use?</summary>
+        <p>TraceLoom is designed for local development and debugging. It stores data in a local SQLite database and runs a lightweight server on your machine. There is no cloud component. Without <code>TRACELOOM_URL</code> set, <code>init()</code> is a zero-overhead no-op.</p>
+      </details>
+      <details>
+        <summary>Can I use it with Docker?</summary>
+        <p>Yes. Run <code>traceloom-server</code> in a container and point your app to it via the <code>TRACELOOM_URL</code> environment variable. The dashboard is served directly by the server.</p>
+      </details>
+      <details>
+        <summary>Does the client SDK have any dependencies?</summary>
+        <p>No. The <code>traceloom</code> client package has zero dependencies. It uses <code>urllib.request</code> from the standard library to send captured data, avoiding any patching recursion.</p>
+      </details>
+    </div>
+  </section>
+
+{% endblock %}

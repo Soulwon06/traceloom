@@ -1,0 +1,32 @@
+"""Configuration for TraceLoom client."""
+
+import logging
+from dataclasses import dataclass, field
+
+
+@dataclass
+class TraceLoomConfig:
+    server_url: str
+    capture_hosts: list[str] = field(default_factory=list)
+    capture_all: bool = True
+    ignore_hosts: list[str] = field(default_factory=list)
+    redact_headers: list[str] = field(
+        default_factory=lambda: ["authorization", "x-api-key"]
+    )
+    redact_query_params: list[str] = field(default_factory=list)
+    capture_exceptions: bool = True
+    capture_tests: bool = True
+    capture_logs: bool = False
+    log_level: int = logging.WARNING
+    ignore_loggers: list[str] = field(default_factory=list)
+    app: str = ""
+    session: str = ""
+    debug: bool = False
+
+    def should_capture(self, host: str) -> bool:
+        """Decide whether to capture a request to the given host."""
+        if host in self.ignore_hosts:
+            return False
+        if self.capture_all:
+            return True
+        return host in self.capture_hosts

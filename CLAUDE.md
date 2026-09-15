@@ -1,0 +1,106 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```bash
+# Install all workspace packages
+uv sync
+
+# Run the server (default: http://localhost:5110)
+uv run traceloom-server
+
+# Run all tests
+uv run pytest
+
+# Run tests by scope
+uv run pytest server/tests/          # server unit tests
+uv run pytest clients/python/tests/  # client SDK tests
+uv run pytest tests/test_e2e/        # end-to-end tests
+
+# Run a single test
+uv run pytest server/tests/test_api.py::test_capture_returns_201 -v
+
+# Type checking
+uv run ty check server/src clients/python/src
+
+# Linting (runs automatically via pre-commit hooks)
+uv run ruff check .
+uv run ruff format .
+
+# Bump versions (patch, minor, or major)
+just bump-client patch   # traceloom client SDK
+just bump-server minor   # traceloom-server
+
+# Frontend (React SPA)
+cd frontend && npm install      # install dependencies
+cd frontend && npm run dev      # dev server on http://localhost:5111 (proxies /api to :5110)
+cd frontend && npm run build    # production build to frontend/dist/
+cd frontend && npm test         # run Vitest tests
+cd frontend && npx orval        # regenerate API types from OpenAPI spec
+just frontend-bundle            # build frontend + copy into server package for wheel
+```
+
+## Architecture
+
+This is a **uv workspace monorepo** with two packages plus a React frontend:
+
+- **`clients/python/` (traceloom)** — Client SDK with zero dependencies. Monkey-patches `requests.Session.send`, `httpx.Client.send`/`AsyncClient.send`, `aiohttp.ClientSession._request`, `grpc.insecure_channel`/`grpc.secure_channel`, and `botocore.httpsession.URLLib3Session.send` to intercept outgoing traffic. Also hooks `sys.excepthook`/`threading.excepthook` for exception capture and `logging.Logger.callHandlers` for log capture. Sends all events to the server via a background thread using `urllib` (to avoid triggering its own patches).
+
+- **`server/` (traceloom-server)** — FastAPI app with Tortoise ORM + SQLite. Receives captured events at three typed endpoints — `POST /api/capture/http`, `POST /api/capture/log`, `POST /api/capture/exception` — each with a strict Pydantic input schema. Stores them in a unified `CapturedEvent` model and serves a JSON API (`/api/*`). The original HTTP-only `POST /api/capture` is still accepted (marked deprecated in OpenAPI) for older client wheels, which only ever posted HTTP captures there. Routes are thin wrappers over `services/capture.py` (writes) and `services/events.py` (reads). When `TRACELOOM_FRONTEND_DIR` points to a directory with built React assets, also serves the web dashboard.
+
+- **`frontend/`** — React SPA built with Vite, MUI, TanStack Query, and jotai. Manual API hooks in `api/events.ts` (Orval-generated hooks in `api/generated/` are legacy). In development, Vite on port 5111 proxies `/api/*` to FastAPI on port 5110. In Docker, the frontend is pre-built and served by FastAPI directly.
+
+**Data flow:** Patched library / excepthook / logging → `traceloom.transport.send_http()` / `send_log()` / `send_exception()` → background queue → `POST /api/capture/{http,log,exception}` → `services/capture.py` → `CapturedEvent` (Tortoise ORM) → SQLite → `services/events.py` → JSON API (`/api/events`) → React SPA.
+
+### CapturedEvent data model
+
+The `CapturedEvent` table has **top-level columns** (`id`, `timestamp`, `event_type`, `summary`) and a **`data` JSON blob**. Top-level columns are structural fields needed for ordering, discrimination, and list display. Everything else — including filterable fields like `host`, `method`, `app`, `session` — lives in `data` and is queried via `json_extract()` when needed. This avoids schema migrations entirely: Tortoise ORM's `generate_schemas=True` handles table creation, and new fields in `data` require no DDL.
+
+**Rule**: Keep new fields in `data` by default. Only promote to a top-level column when `json_extract()` is a proven bottleneck — which for a local dev tool is likely never.
+
+## Key Patterns
+
+- **Server routes** are in `routes/api.py` (JSON API with Pydantic response models). Routes are thin wrappers — persistence and queries live in `services/capture.py` and `services/events.py`. New persistence behavior or filter logic should land in the service layer with a corresponding `tests/test_services_*.py` test; routes should only own HTTP concerns (status codes, 404 mapping, OpenAPI shape).
+- **Frontend uses TanStack Query** for data fetching with 3-second polling interval (replaces HTMX polling). Orval generates typed hooks from the OpenAPI spec.
+- **Frontend state**: jotai atoms for filter state and selected request ID (synced to URL hash for deep linking).
+- **MUI components** throughout: Table, Chip, Select, List, Paper, etc. `react18-json-view` for JSON rendering with a `customizeNode` callback for value annotations.
+- **Dark theme is manual, not MUI's built-in dark mode.** The app uses MUI's default light theme. Dark surfaces (toolbar, sidebar, dialogs) use custom `dark.*` tokens from `theme.ts` (e.g., `dark.textPrimary`, `dark.divider`). Do NOT use MUI palette tokens like `text.primary` or `divider` on dark surfaces — they resolve to light-theme colors and will be invisible. The `mono` font stack is also exported from `theme.ts`.
+- **JSON value annotations** (`frontend/src/annotations/`): Recognizes patterns like Unix timestamps in JSON bodies and shows tooltip icons. To add a new annotator, create a detector function and register it in `registry.ts`. See `frontend/src/annotations/README.md`.
+- **SPA serving**: The PyPI wheel ships pre-built frontend assets in `_frontend/`. `TRACELOOM_FRONTEND_DIR` env var overrides the bundled path (used in Docker). Precedence: env var > bundled `_frontend/` > API-only mode.
+- **Debug logging convention**: The client SDK uses the `"traceloom"` Python logger hierarchy for debug output (`_debug.py`, patches, transport). All debug messages follow the pattern: `<past-tense-verb> <object> [(<detail>)]` — lowercase, no trailing period. Examples: `patched requests.Session.send`, `skipped GET example.com (ignored host)`, `captured POST api.stripe.com via httpx (201)`, `sent /api/capture/http (201)`. Config provenance is a single line: `resolved config: server_url=http://... (TRACELOOM_URL), capture_all=True (default), ...`. The `"traceloom"` logger has `propagate = False` and a `NullHandler` by default; `debug=True` adds a `StreamHandler(stderr)`. Child loggers (`traceloom.patches.*`, `traceloom.transport`) propagate to it. New debug log statements in patches/transport should follow this convention.
+- **Client SDK has no dependencies**: Transport uses `urllib.request` directly to avoid patching recursion. The server's own hostname is auto-added to `ignore_hosts`.
+- **Client SDK module boundaries**: Shared helpers (body serialization, header/query param redaction, Python version string) live in `traceloom/utils.py`. Integration modules (`traceloom.integrations.*`) should import from `traceloom.utils` and `traceloom.transport`, never from `traceloom.capture` (which is outgoing-HTTP-specific). When a helper outgrows its original module, move it to `utils.py`.
+- **`capture_exception()`** in `traceloom.patches.patch_excepthook` is the shared function for emitting exception events from any context (excepthook, threading hook, middleware). It swallows all errors internally — callers don't need try/except wrappers.
+- **Server tests** use `FastAPI.TestClient` with a fresh SQLite DB per test (see `server/tests/conftest.py`). Tortoise ORM global context is reset between tests via `_reset_tortoise_global_context()`.
+- **E2E tests** spin up a real uvicorn server and a mock HTTP target, then verify the full capture pipeline via the API.
+- **Adding or changing a client config option**: Every option is exposed across three call surfaces backed by one data model. Update all of them together, otherwise the surfaces drift:
+  1. **Data model** — `clients/python/src/traceloom/config.py`: add the field on `TraceLoomConfig`. If the option affects whether a request is captured, update `should_capture()` too.
+  2. **Python API** — `clients/python/src/traceloom/__init__.py`: add the parameter to `traceloom.init()`, add `TRACELOOM_*` env var resolution (using `_env_str` / `_env_bool` / `_env_list` from `_env.py`), and update the parameter table in the `init()` docstring.
+  3. **CLI wrapper** — `clients/python/src/traceloom/cli.py`: add the `--flag` to `_build_parser()` and the corresponding override in `_traceloom_env_overrides()`. CLI flags map 1:1 to `TRACELOOM_*` env vars — never add a flag without a matching env var, or vice versa.
+  Then update tests (`test_config.py`, `test_env.py`, `test_cli.py`) and docs (`docs/configuration.md` parameter table, `docs/getting-started.md` if user-facing, the three READMEs, and `clients/python/CHANGELOG.md`).
+- **Three README files** must stay in sync: `README.md` (root), `clients/python/README.md` (PyPI page for traceloom), and `server/README.md` (PyPI page for traceloom-server). Update all three after significant changes.
+- **Changelogs**: Each package has its own `CHANGELOG.md` — `server/CHANGELOG.md` and `clients/python/CHANGELOG.md`. Follow [Keep a Changelog](https://keepachangelog.com/) format. **Before committing**, review whether the changes are user-facing or changelog-worthy. If so, update the `[Unreleased]` section in the relevant changelog as a separate step before creating the commit. Bumping versions moves `[Unreleased]` entries to a versioned section automatically via bump-my-version.
+- **Documentation site** (`docs/`): After significant changes to client or server logic, update the relevant pages (`docs/getting-started.md`, `docs/configuration.md`, `docs/api.md`).
+- **Tech debt** (`docs/tech_debt.md`): When you notice something worth addressing later but out of scope for the current task, add it to the tech debt file instead of fixing it inline.
+- **No verification checklists in PRs.** Don't add "## Verification" or "## Test plan" checkbox lists to PR descriptions. Nobody uses them.
+- **Committing with pre-commit hooks.** When splitting work into multiple commits, pre-commit hooks (ruff check, ruff format) may fail on partial commits because they lint the entire codebase, not just staged files. To avoid fighting the hooks:
+  1. Run `uv run pre-commit run --all-files` and fix any issues it reports.
+  2. Create all commits with `git commit -n` (skip hooks) using `/commit-work`.
+  3. After the last commit, run `uv run pre-commit run --all-files` again to verify the final state passes all hooks. Fix any leftover issues in a follow-up commit (with hooks enabled).
+
+## Screenshots
+
+Landing page screenshots (dashboard hero + Claude Code session) are generated via scripts in `scripts/`. Use the `/traceloom-screenshot-maker` skill for full instructions, options, and session format.
+
+## Brand Color Palette
+
+Derived from the TraceLoom logo. Use these colors for highlights, accents, and UI elements.
+
+| Name         | Hex       | Usage                                        |
+|--------------|-----------|----------------------------------------------|
+| Dark Surface | `#2A2A2E` | Primary dark — toolbar, sidebar background   |
+| Amber        | `#FFA600` | Primary accent — logo, highlights, active states |
+| Light Amber  | `#FFB833` | Secondary accent — hover states, badges      |
+| Pale Amber   | `#FFD480` | Tertiary accent — light highlights, muted    |

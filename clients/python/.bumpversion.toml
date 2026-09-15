@@ -1,0 +1,17 @@
+[tool.bumpversion]
+current_version = "0.18.0"
+commit = true
+tag = true
+pre_commit_hooks = ["uv lock", "git add uv.lock"]
+tag_name = "traceloom/v{new_version}"
+tag_message = "Release traceloom v{new_version}"
+message = "Bump traceloom version: {current_version} → {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "clients/python/pyproject.toml"
+key_path = "project.version"
+
+[[tool.bumpversion.files]]
+filename = "clients/python/src/traceloom/__init__.py"
+search = '__version__ = "{current_version}"'
+replace = '__version__ = "{new_version}"'

@@ -1,0 +1,505 @@
+"""Tests for traceloom._env helpers and env-var-based init()."""
+
+import logging
+import os
+from unittest.mock import patch
+
+import pytest
+import traceloom
+from traceloom._env import env_bool, env_list, env_log_level, env_str, parse_log_level
+
+# --- env_str ---
+
+
+def testenv_str_returns_value():
+    with patch.dict(os.environ, {"TRACELOOM_URL": "http://example.com:9000"}):
+        assert env_str("URL") == "http://example.com:9000"
+
+
+def testenv_str_strips_whitespace():
+    with patch.dict(os.environ, {"TRACELOOM_URL": "  http://host:1234  "}):
+        assert env_str("URL") == "http://host:1234"
+
+
+def testenv_str_returns_none_when_unset():
+    with patch.dict(os.environ, {}, clear=True):
+        assert env_str("URL") is None
+
+
+def testenv_str_returns_none_when_empty():
+    with patch.dict(os.environ, {"TRACELOOM_URL": ""}):
+        assert env_str("URL") is None
+
+
+def testenv_str_returns_none_when_only_whitespace():
+    with patch.dict(os.environ, {"TRACELOOM_URL": "   "}):
+        assert env_str("URL") is None
+
+
+# --- env_bool ---
+
+
+@pytest.mark.parametrize("value", ["true", "True", "TRUE", "1", "yes", "Yes", "YES"])
+def testenv_bool_truthy(value):
+    with patch.dict(os.environ, {"TRACELOOM_CAPTURE_ALL": value}):
+        assert env_bool("CAPTURE_ALL") is True
+
+
+@pytest.mark.parametrize("value", ["false", "False", "FALSE", "0", "no", "No", "NO"])
+def testenv_bool_falsy(value):
+    with patch.dict(os.environ, {"TRACELOOM_CAPTURE_ALL": value}):
+        assert env_bool("CAPTURE_ALL") is False
+
+
+def testenv_bool_returns_none_when_unset():
+    with patch.dict(os.environ, {}, clear=True):
+        assert env_bool("CAPTURE_ALL") is None
+
+
+def testenv_bool_returns_none_when_empty():
+    with patch.dict(os.environ, {"TRACELOOM_CAPTURE_ALL": ""}):
+        assert env_bool("CAPTURE_ALL") is None
+
+
+def testenv_bool_returns_none_for_unrecognised():
+    with patch.dict(os.environ, {"TRACELOOM_CAPTURE_ALL": "maybe"}):
+        assert env_bool("CAPTURE_ALL") is None
+
+
+# --- parse_log_level ---
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("10", 10),
+        ("20", 20),
+        ("30", 30),
+        ("DEBUG", 10),
+        ("INFO", 20),
+        ("WARNING", 30),
+        ("ERROR", 40),
+        ("CRITICAL", 50),
+        ("debug", 10),
+        ("Info", 20),
+        ("warning", 30),
+    ],
+)
+def test_parse_log_level(value, expected):
+    assert parse_log_level(value) == expected
+
+
+def test_parse_log_level_returns_none_for_invalid():
+    assert parse_log_level("BOGUS") is None
+
+
+# --- env_log_level ---
+
+
+def test_env_log_level_numeric():
+    with patch.dict(os.environ, {"TRACELOOM_LOG_LEVEL": "20"}):
+        assert env_log_level("LOG_LEVEL") == 20
+
+
+def test_env_log_level_named():
+    with patch.dict(os.environ, {"TRACELOOM_LOG_LEVEL": "DEBUG"}):
+        assert env_log_level("LOG_LEVEL") == 10
+
+
+def test_env_log_level_case_insensitive():
+    with patch.dict(os.environ, {"TRACELOOM_LOG_LEVEL": "info"}):
+        assert env_log_level("LOG_LEVEL") == 20
+
+
+def test_env_log_level_returns_none_when_unset():
+    with patch.dict(os.environ, {}, clear=True):
+        assert env_log_level("LOG_LEVEL") is None
+
+
+def test_env_log_level_returns_none_for_invalid():
+    with patch.dict(os.environ, {"TRACELOOM_LOG_LEVEL": "BOGUS"}):
+        assert env_log_level("LOG_LEVEL") is None
+
+
+# --- env_list ---
+
+
+def testenv_list_comma_separated():
+    with patch.dict(os.environ, {"TRACELOOM_CAPTURE_HOSTS": "a.com,b.com,c.com"}):
+        assert env_list("CAPTURE_HOSTS") == ["a.com", "b.com", "c.com"]
+
+
+def testenv_list_strips_items():
+    with patch.dict(os.environ, {"TRACELOOM_CAPTURE_HOSTS": " a.com , b.com "}):
+        assert env_list("CAPTURE_HOSTS") == ["a.com", "b.com"]
+
+
+def testenv_list_skips_empty_items():
+    with patch.dict(os.environ, {"TRACELOOM_CAPTURE_HOSTS": "a.com,,b.com,"}):
+        assert env_list("CAPTURE_HOSTS") == ["a.com", "b.com"]
+
+
+def testenv_list_returns_none_when_unset():
+    with patch.dict(os.environ, {}, clear=True):
+        assert env_list("CAPTURE_HOSTS") is None
+
+
+def testenv_list_returns_none_when_empty():
+    with patch.dict(os.environ, {"TRACELOOM_CAPTURE_HOSTS": ""}):
+        assert env_list("CAPTURE_HOSTS") is None
+
+
+def testenv_list_single_item():
+    with patch.dict(os.environ, {"TRACELOOM_CAPTURE_HOSTS": "api.stripe.com"}):
+        assert env_list("CAPTURE_HOSTS") == ["api.stripe.com"]
+
+
+# --- init() env var integration ---
+
+
+def test_init_no_url_does_nothing():
+    with patch.dict(os.environ, {}, clear=True):
+        traceloom._config = None
+        traceloom.init()
+        assert traceloom._config is None
+
+
+def test_init_no_url_logs_warning(caplog):
+    with (
+        patch.dict(os.environ, {}, clear=True),
+        caplog.at_level(logging.WARNING, logger="traceloom"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert "server URL" in caplog.text
+
+
+def test_init_server_url_from_env():
+    with (
+        patch.dict(os.environ, {"TRACELOOM_URL": "http://traceloom:9999"}),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert traceloom._config.server_url == "http://traceloom:9999"
+
+
+def test_init_explicit_server_url_overrides_env():
+    with (
+        patch.dict(os.environ, {"TRACELOOM_URL": "http://from-env:1111"}),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init(server_url="http://explicit:2222")
+        assert traceloom._config.server_url == "http://explicit:2222"
+
+
+def test_init_capture_hosts_from_env():
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "TRACELOOM_URL": "http://test:5110",
+                "TRACELOOM_CAPTURE_HOSTS": "a.com,b.com",
+            },
+        ),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert traceloom._config.capture_hosts == ["a.com", "b.com"]
+
+
+def test_init_ignore_hosts_from_env():
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "TRACELOOM_URL": "http://test:5110",
+                "TRACELOOM_IGNORE_HOSTS": "internal.svc,localhost",
+            },
+        ),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert "internal.svc" in traceloom._config.ignore_hosts
+        assert "localhost" in traceloom._config.ignore_hosts
+
+
+def test_init_redact_headers_from_env():
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "TRACELOOM_URL": "http://test:5110",
+                "TRACELOOM_REDACT_HEADERS": "X-Secret,X-Token",
+            },
+        ),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert traceloom._config.redact_headers == ["x-secret", "x-token"]
+
+
+def test_init_redact_query_params_from_env():
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "TRACELOOM_URL": "http://test:5110",
+                "TRACELOOM_REDACT_QUERY_PARAMS": "api_key,token",
+            },
+        ),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert traceloom._config.redact_query_params == ["api_key", "token"]
+
+
+def test_init_redact_query_params_default_empty():
+    with (
+        patch.dict(os.environ, {"TRACELOOM_URL": "http://test:5110"}, clear=True),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert traceloom._config.redact_query_params == []
+
+
+def test_init_redact_headers_default_without_env():
+    with (
+        patch.dict(os.environ, {"TRACELOOM_URL": "http://test:5110"}, clear=True),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert traceloom._config.redact_headers == [
+            "authorization",
+            "x-api-key",
+            "x-goog-api-key",
+        ]
+
+
+def test_init_capture_all_false_from_env():
+    with (
+        patch.dict(
+            os.environ,
+            {"TRACELOOM_URL": "http://test:5110", "TRACELOOM_CAPTURE_ALL": "false"},
+        ),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert traceloom._config.capture_all is False
+
+
+def test_init_defaults_with_explicit_url():
+    """With only a URL and no other config, hardcoded defaults apply."""
+    with (
+        patch.dict(os.environ, {}, clear=True),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init(server_url="http://test:5110")
+        assert traceloom._config.server_url == "http://test:5110"
+        assert traceloom._config.capture_all is True
+        assert traceloom._config.capture_hosts == []
+        assert "test" in traceloom._config.ignore_hosts  # auto-added
+        assert traceloom._config.redact_headers == [
+            "authorization",
+            "x-api-key",
+            "x-goog-api-key",
+        ]
+        assert traceloom._config.redact_query_params == []
+        assert traceloom._config.capture_tests is True
+
+
+def test_init_capture_tests_from_env():
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "TRACELOOM_URL": "http://test:5110",
+                "TRACELOOM_CAPTURE_TESTS": "false",
+            },
+        ),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+
+        traceloom.init()
+
+        assert traceloom._config.capture_tests is False
+        assert traceloom.is_test_capture_enabled() is False
+
+
+def test_test_capture_is_disabled_until_init():
+    traceloom._config = None
+    assert traceloom.is_test_capture_enabled() is False
+
+
+def test_init_ignore_loggers_from_env():
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "TRACELOOM_URL": "http://test:5110",
+                "TRACELOOM_IGNORE_LOGGERS": "uvicorn.access,uvicorn.error",
+            },
+        ),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert traceloom._config.ignore_loggers == ["uvicorn.access", "uvicorn.error"]
+
+
+def test_init_ignore_loggers_default_empty():
+    with (
+        patch.dict(os.environ, {"TRACELOOM_URL": "http://test:5110"}, clear=True),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert traceloom._config.ignore_loggers == []
+
+
+def test_init_log_level_string():
+    with (
+        patch.dict(os.environ, {}, clear=True),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom._patched = False
+        traceloom.init(server_url="http://test:5110", log_level="DEBUG")
+        assert traceloom._config.log_level == 10
+
+
+def test_init_log_level_string_from_env():
+    with (
+        patch.dict(
+            os.environ,
+            {"TRACELOOM_URL": "http://test:5110", "TRACELOOM_LOG_LEVEL": "INFO"},
+        ),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom._patched = False
+        traceloom.init()
+        assert traceloom._config.log_level == 20
+
+
+# --- init() idempotency ---
+
+
+def test_init_second_call_does_not_repatch():
+    """The second init() call must not re-invoke apply_all.
+
+    Re-applying patches nests wrappers: the second patch captures the
+    first patched_send as its original_send, so every request gets
+    double-captured.
+    """
+    with (
+        patch.dict(os.environ, {}, clear=True),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all") as mock_apply,
+    ):
+        traceloom._config = None
+        traceloom._patched = False
+        traceloom.init(server_url="http://test:5110")
+        traceloom.init(server_url="http://other:5110")
+        assert mock_apply.call_count == 1
+
+
+def test_init_second_call_updates_config_in_place():
+    """The same TraceLoomConfig object must survive the second init().
+
+    Patches captured a reference to it via closure; mutating in place
+    means new args (filtering, redaction) take effect immediately
+    without re-patching.
+    """
+    with (
+        patch.dict(os.environ, {}, clear=True),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom._patched = False
+        traceloom.init(
+            server_url="http://test:5110",
+            ignore_hosts=["a.com"],
+            capture_all=True,
+        )
+        first_config = traceloom._config
+
+        traceloom.init(
+            server_url="http://other:5110",
+            ignore_hosts=["b.com"],
+            capture_all=False,
+        )
+
+        assert traceloom._config is first_config  # same object, mutated
+        assert traceloom._config.server_url == "http://other:5110"
+        assert "b.com" in traceloom._config.ignore_hosts
+        assert "a.com" not in traceloom._config.ignore_hosts
+        assert traceloom._config.capture_all is False
+
+
+def test_init_app_from_env():
+    with (
+        patch.dict(
+            os.environ,
+            {"TRACELOOM_URL": "http://test:5110", "TRACELOOM_APP": "myapp"},
+        ),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert traceloom._config.app == "myapp"
+
+
+def test_init_session_from_env():
+    with (
+        patch.dict(
+            os.environ,
+            {"TRACELOOM_URL": "http://test:5110", "TRACELOOM_SESSION": "debug-payment"},
+        ),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init()
+        assert traceloom._config.session == "debug-payment"
+
+
+def test_init_app_explicit_overrides_env():
+    with (
+        patch.dict(
+            os.environ,
+            {"TRACELOOM_URL": "http://test:5110", "TRACELOOM_APP": "env-app"},
+        ),
+        patch("traceloom._start_worker"),
+        patch("traceloom._apply_all"),
+    ):
+        traceloom._config = None
+        traceloom.init(app="explicit-app")
+        assert traceloom._config.app == "explicit-app"

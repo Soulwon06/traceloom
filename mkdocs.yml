@@ -1,0 +1,67 @@
+site_name: TraceLoom
+site_description: Capture Python HTTP traffic, pytest executions, logs, and exceptions in a local web dashboard.
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.footer
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.top
+
+extra:
+  generator: false
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.snippets
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Guides:
+    - guides/index.md
+    - guides/debug-pytest.md
+    - guides/debug-requests.md
+    - guides/debug-httpx.md
+    - guides/debug-aiohttp.md
+    - guides/debug-grpc.md
+    - guides/debug-boto3.md
+    - guides/debug-google-cloud.md
+    - guides/debug-openai.md
+    - guides/debug-anthropic.md
+    - guides/debug-gemini.md
+    - guides/debug-stripe.md
+    - guides/debug-fastapi.md
+    - guides/debug-django.md
+  - Reference:
+    - Query captured events: query.md
+    - Configuration: configuration.md
+    - Hierarchy and data model: data-model.md
+    - API: api.md
+    - Keyboard Shortcuts: keyboard-shortcuts.md
+  - AI Skills: ai-skills.md
+  - Changelog: changelog.md

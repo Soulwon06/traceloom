@@ -1,0 +1,59 @@
+default_language_version:
+  python: python3.14
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: debug-statements
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.12
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty
+        language: system
+        entry: uv run --frozen ty check
+        types: [python]
+        pass_filenames: false
+        args: [server/src, clients/python/src]
+      - id: uv-lock
+        name: uv lock check
+        language: system
+        entry: uv lock --check
+        files: (pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+      - id: openapi-schema-export
+        name: export OpenAPI schema
+        language: system
+        entry: bash -c 'uv run --frozen traceloom-server openapi-export --output frontend/openapi.json && cd frontend && npx prettier --write openapi.json'
+        files: ^server/src/.*\.py$
+        pass_filenames: false
+      - id: openapi-typescript
+        name: regenerate frontend types from OpenAPI
+        language: system
+        entry: bash -c 'cd frontend && npx openapi-typescript openapi.json -o src/api/schema.ts && npx prettier --write src/api/schema.ts'
+        files: ^(frontend/openapi\.json|server/src/.*\.py)$
+        pass_filenames: false
+      - id: frontend-eslint
+        name: frontend eslint
+        language: system
+        entry: bash -c 'cd frontend && npx eslint .'
+        files: ^frontend/src/.*\.(js|jsx|ts|tsx)$
+        pass_filenames: false
+      - id: frontend-prettier
+        name: frontend prettier
+        language: system
+        entry: bash -c 'cd frontend && npx prettier --check .'
+        files: ^frontend/.*\.(js|jsx|ts|tsx|json|css)$
+        pass_filenames: false

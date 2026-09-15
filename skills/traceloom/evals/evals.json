@@ -1,0 +1,55 @@
+{
+  "skill_name": "traceloom",
+  "fixture": "Seeded TraceLoom server: session 'checkout-debug' (FastAPI hierarchy demo — incoming requests, nested httpx calls, one ConnectError, logs) and session 'nightly-tests' (pytest run — one assertion failure, one passing test that makes a deliberately failing request). Both sessions contain a POST to http://127.0.0.1:1/charge, so naming that URL alone does not identify the right event.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "failed-outgoing-call",
+      "prompt": "our checkout endpoint started returning 500s whenever the payment provider is down, and the app logs just say 'Internal Server Error' so i can't tell what's actually happening. traceloom captured the run, it's at http://localhost:PORT. can you dig in and tell me what's failing and where?",
+      "expected_output": "Identifies the outgoing POST http://127.0.0.1:1/charge that raised httpx ConnectError ([Errno 61] Connection refused), notes it never got a response (status_code null), and attributes it to the POST /checkout/provider-down incoming request that returned 500.",
+      "files": [],
+      "primary_assertion": "Attributes the failed call to the POST /checkout/provider-down request using parent-child evidence — the parent span dd4f91bac9a3d19b, or an explicit statement that it is a runtime child — rather than timing, shared session, or a shared trace ID (a trace covers the whole request tree and does not establish parenthood)",
+      "assertions": [
+        "Identifies the failing call as the httpx call inside session checkout-debug (event fc180766-cede-4fb6-9c70-b72c04f7307d), not the same-URL requests call in the nightly-tests session",
+        "Reports the exception that ended the call: ConnectError, [Errno 61] Connection refused",
+        "States the call never received a response (no status code) instead of reporting a status code for it",
+        "Attributes the failed call to the POST /checkout/provider-down request using parent-child evidence — the parent span dd4f91bac9a3d19b, or an explicit statement that it is a runtime child — rather than timing, shared session, or a shared trace ID (a trace covers the whole request tree and does not establish parenthood)",
+        "Distinguishes an immediate connection refusal (0 ms, nothing listening) from a timeout or a slow provider",
+        "Does not present the uvicorn 'Exception in ASGI application' log or the access log as nested under the 500 request — both have hierarchy: null and are not its children"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "single-event-context",
+      "prompt": "looking at http://localhost:PORT/#90796904-8b40-4bd7-8860-330f28228a08 in traceloom and i'm not sure what to make of it — is this an actual problem? what was going on when it fired?",
+      "expected_output": "Resolves the log annotation to its owning operation — the pytest test test_provider_failure_is_handled, which PASSED — and explains that the warning and the failed POST /charge are the deliberate error-handling path of that test, not a real incident.",
+      "files": [],
+      "primary_assertion": "Answers the user's question: this is not a real incident, it is a test deliberately exercising its provider-failure path",
+      "assertions": [
+        "Identifies the event as the WARNING log 'payment provider unavailable' from logger pytest_hierarchy_demo",
+        "Names the operation it was emitted inside — test_provider_failure_is_handled — and justifies the link via the annotation's span (aef3b56559987730) rather than timestamp proximity",
+        "States that the owning test passed",
+        "Mentions the failed POST /charge that the same test made",
+        "Answers the user's question: this is not a real incident, it is a test deliberately exercising its provider-failure path",
+        "Sends no request to port 5110: every API call goes to the port in the pasted URL",
+        "Resolves the owning operation by querying span_id/parent_span_id or rendering the hierarchy, not by dumping the whole session and sorting by timestamp"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "pytest-failure-triage",
+      "prompt": "traceloom's at http://localhost:PORT — the nightly-tests session has a failure. what broke, and is that connection error in the same run the cause?",
+      "expected_output": "Reports test_total_after_discount[small-order] failing on assert 40 == 45 (discounted_total subtracts 10 units instead of 10 percent), and states that the ConnectionError belongs to test_provider_failure_is_handled, a different test that passed, so it is unrelated.",
+      "files": [],
+      "primary_assertion": "States positively that the connection error is not the cause, and names what the actual cause is — the discount assertion",
+      "assertions": [
+        "Names the failing test: test_total_after_discount[small-order]",
+        "Reports the assertion detail: assert 40 == 45 from discounted_total(50, 10)",
+        "Attributes the ConnectionError to test_provider_failure_is_handled using runtime parentage (parent span aef3b56559987730 or an explicit runtime-child statement), not timeline adjacency",
+        "States that the test owning the ConnectionError passed",
+        "States positively that the connection error is not the cause, and names what the actual cause is — the discount assertion",
+        "Notes that the failing test itself made no HTTP calls and has no runtime children"
+      ]
+    }
+  ]
+}

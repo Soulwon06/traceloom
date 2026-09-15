@@ -1,0 +1,98 @@
+/* ── TraceLoom Brand Palette ──
+ * Dark Surface: #2A2A2E  — primary dark
+ * Amber:        #FFA600  — primary accent
+ * Light Amber:  #FFB833  — secondary accent
+ * Pale Amber:   #FFD480  — tertiary accent
+ */
+
+/* ── Light mode ── */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color:        #2A2A2E;
+  --md-primary-fg-color--light: #3a3a40;
+  --md-primary-fg-color--dark:  #1a1a1e;
+  --md-primary-bg-color:        #ffffff;
+  --md-primary-bg-color--light: #ffffff;
+
+  --md-accent-fg-color:         #FFA600;
+  --md-accent-fg-color--transparent: rgba(255, 166, 0, 0.1);
+  --md-accent-bg-color:         #ffffff;
+  --md-accent-bg-color--light:  #ffffff;
+
+  --md-typeset-a-color:         #FFA600;
+}
+
+/* ── One-row header ──
+ * Material stacks the navigation tabs in a second bar under the header. The
+ * header row has room between the site title and search box, so move the tabs
+ * into that space and keep the header to one row.
+ * Only on screens wide enough that Material shows the tabs at all (76.25em).
+ * Below that, the tabs are hidden and the nav lives in the drawer.
+ */
+@media screen and (min-width: 76.25em) {
+  /* Keep sticky sidebars at the same height before and after scrolling.
+     Preserve the default top offset on the article column instead. */
+  .md-main__inner {
+    margin-top: 0;
+  }
+  .md-content {
+    padding-top: 1.5rem;
+  }
+  .md-header__inner {
+    position: relative;
+    z-index: 1;
+  }
+  /* Material replaces the site title with the current page title while the
+     page scrolls. Long page titles collide with the inline tabs, so keep the
+     compact site title in this desktop-only layout. */
+  .md-header__title--active .md-header__topic:first-child {
+    transform: none;
+    opacity: 1;
+  }
+  .md-header__topic + .md-header__topic {
+    display: none;
+  }
+  .md-header > .md-tabs {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    overflow: visible;
+    /* The bar spans the header, so let clicks through everywhere except the
+       tab links themselves. The search box and repo link sit underneath. */
+    pointer-events: none;
+  }
+  .md-header > .md-tabs > .md-grid {
+    /* As a flex item the grid would shrink to its content and recenter
+       itself; keep it spanning the header so the tabs stay grid-aligned. */
+    width: 100%;
+  }
+  /* Use a compound selector because Material sets the margin through
+     [dir=ltr] .md-tabs__list, which outranks a bare class selector. */
+  .md-header > .md-tabs .md-tabs__list {
+    /* Clears the logo and the "TraceLoom" title to its left. */
+    margin-left: 7rem;
+  }
+  .md-tabs__link {
+    pointer-events: auto;
+  }
+}
+
+/* ── Dark mode ── */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:        #2A2A2E;
+  --md-primary-fg-color--light: #3a3a40;
+  --md-primary-fg-color--dark:  #1a1a1e;
+
+  --md-accent-fg-color:         #FFB833;
+  --md-accent-fg-color--transparent: rgba(255, 184, 51, 0.1);
+
+  --md-typeset-a-color:         #FFB833;
+}
+
+[data-md-color-scheme="slate"] .md-header .md-logo img {
+  filter: invert(1);
+}

@@ -1,0 +1,421 @@
+"""Tests for traceloom.capture serialization."""
+
+import gzip
+import zlib
+
+import pytest
+from traceloom.capture import serialize_request_error, serialize_request_response
+from traceloom.config import TraceLoomConfig
+from traceloom.utils import MAX_DECOMPRESSED
+
+
+@pytest.fixture()
+def config():
+    return TraceLoomConfig(
+        server_url="http://test:5110",
+        redact_headers=["authorization", "x-api-key", "x-goog-api-key"],
+    )
+
+
+@pytest.fixture()
+def basic_payload(config):
+    return serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://api.example.com/test",
+        request_headers={"Content-Type": "application/json"},
+        request_body=None,
+        status_code=200,
+        response_headers={"Content-Type": "application/json"},
+        response_body='{"ok": true}',
+        duration_s=0.15,
+        library="requests",
+    )
+
+
+def test_basic_fields(basic_payload):
+    assert basic_payload["duration_ms"] == 150
+    assert basic_payload["request"]["method"] == "GET"
+    assert basic_payload["request"]["url"] == "https://api.example.com/test"
+    assert basic_payload["response"]["status_code"] == 200
+    assert basic_payload["response"]["body"] == '{"ok": true}'
+    assert basic_payload["meta"]["library"] == "requests"
+    assert "id" in basic_payload
+    assert "timestamp" in basic_payload
+
+
+def test_error_fields(config):
+    # Arrange
+    error = TimeoutError("connection timed out")
+
+    # Act
+    payload = serialize_request_error(
+        config=config,
+        method="POST",
+        url="https://api.example.com/charges",
+        request_headers={"Authorization": "secret"},
+        request_body="amount=10",
+        error=error,
+        duration_s=5.001,
+        library="requests",
+    )
+
+    # Assert
+    assert "response" not in payload
+    assert payload["error"] == {
+        "type": "TimeoutError",
+        "message": "connection timed out",
+        "module": "builtins",
+    }
+    assert payload["duration_ms"] == 5001
+    assert payload["request"]["headers"]["Authorization"] == "[REDACTED]"
+
+
+def test_error_can_include_response_metadata(config):
+    # Arrange
+    error = RuntimeError("response rejected")
+
+    # Act
+    payload = serialize_request_error(
+        config=config,
+        method="GET",
+        url="https://api.example.com/missing",
+        request_headers={},
+        request_body=None,
+        error=error,
+        duration_s=0.1,
+        library="aiohttp",
+        response_status_code=404,
+        response_headers={"Content-Type": "application/json"},
+        response_body=b'{"error":"missing"}',
+    )
+
+    # Assert
+    assert payload["error"]["type"] == "RuntimeError"
+    assert payload["response"] == {
+        "status_code": 404,
+        "headers": {"Content-Type": "application/json"},
+        "body": '{"error":"missing"}',
+        "body_size": 19,
+    }
+
+
+def test_null_body(basic_payload):
+    assert basic_payload["request"]["body"] is None
+    assert basic_payload["request"]["body_size"] == 0
+
+
+def test_header_redaction(config):
+    payload = serialize_request_response(
+        config=config,
+        method="POST",
+        url="https://example.com",
+        request_headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer sk-secret",
+            "X-Api-Key": "key_12345",
+            "X-Goog-Api-Key": "goog_12345",
+            "X-Custom": "keep-this",
+        },
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=None,
+        duration_s=0.1,
+        library="httpx",
+    )
+    headers = payload["request"]["headers"]
+    assert headers["Content-Type"] == "application/json"
+    assert headers["Authorization"] == "[REDACTED]"
+    assert headers["X-Api-Key"] == "[REDACTED]"
+    assert headers["X-Goog-Api-Key"] == "[REDACTED]"
+    assert headers["X-Custom"] == "keep-this"
+
+
+def test_custom_redact_headers():
+    config = TraceLoomConfig(server_url="http://test:5110", redact_headers=["x-secret"])
+    payload = serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://example.com",
+        request_headers={"Authorization": "Bearer token", "X-Secret": "hidden"},
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=None,
+        duration_s=0.05,
+        library="requests",
+    )
+    headers = payload["request"]["headers"]
+    assert headers["Authorization"] == "Bearer token"
+    assert headers["X-Secret"] == "[REDACTED]"
+
+
+def test_bytes_body_utf8(config):
+    payload = serialize_request_response(
+        config=config,
+        method="POST",
+        url="https://example.com",
+        request_headers={},
+        request_body=b'{"key": "value"}',
+        status_code=200,
+        response_headers={},
+        response_body=b'{"result": "ok"}',
+        duration_s=0.1,
+        library="requests",
+    )
+    assert payload["request"]["body"] == '{"key": "value"}'
+    assert payload["request"]["body_size"] == 16
+    assert payload["response"]["body"] == '{"result": "ok"}'
+
+
+def test_binary_body_non_utf8(config):
+    binary_data = bytes(range(256))
+    payload = serialize_request_response(
+        config=config,
+        method="POST",
+        url="https://example.com",
+        request_headers={},
+        request_body=binary_data,
+        status_code=200,
+        response_headers={},
+        response_body=None,
+        duration_s=0.1,
+        library="requests",
+    )
+    assert payload["request"]["body"] == "[binary: 256 bytes]"
+    assert payload["request"]["body_size"] == 256
+
+
+def test_string_body(config):
+    payload = serialize_request_response(
+        config=config,
+        method="POST",
+        url="https://example.com",
+        request_headers={},
+        request_body="plain text",
+        status_code=200,
+        response_headers={},
+        response_body="response text",
+        duration_s=0.1,
+        library="httpx",
+    )
+    assert payload["request"]["body"] == "plain text"
+    assert payload["response"]["body"] == "response text"
+
+
+def test_query_param_redaction():
+    config = TraceLoomConfig(
+        server_url="http://test:5110",
+        redact_query_params=["api_key", "token"],
+    )
+    payload = serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://example.com/search?q=hello&api_key=secret123&token=abc&page=1",
+        request_headers={},
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=None,
+        duration_s=0.1,
+        library="requests",
+    )
+    url = payload["request"]["url"]
+    assert "q=hello" in url
+    assert "page=1" in url
+    assert "secret123" not in url
+    assert "abc" not in url
+    assert "api_key=%5BREDACTED%5D" in url
+    assert "token=%5BREDACTED%5D" in url
+
+
+def test_query_param_redaction_case_insensitive():
+    config = TraceLoomConfig(
+        server_url="http://test:5110",
+        redact_query_params=["api_key"],
+    )
+    payload = serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://example.com/get?API_KEY=secret&other=keep",
+        request_headers={},
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=None,
+        duration_s=0.1,
+        library="requests",
+    )
+    url = payload["request"]["url"]
+    assert "secret" not in url
+    assert "other=keep" in url
+
+
+def test_query_param_redaction_no_query_string():
+    config = TraceLoomConfig(
+        server_url="http://test:5110",
+        redact_query_params=["api_key"],
+    )
+    payload = serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://example.com/path",
+        request_headers={},
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=None,
+        duration_s=0.1,
+        library="requests",
+    )
+    assert payload["request"]["url"] == "https://example.com/path"
+
+
+def test_query_param_redaction_empty_list():
+    """No redact_query_params means URL is left untouched."""
+    config = TraceLoomConfig(server_url="http://test:5110")
+    payload = serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://example.com/get?api_key=secret",
+        request_headers={},
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=None,
+        duration_s=0.1,
+        library="requests",
+    )
+    assert payload["request"]["url"] == "https://example.com/get?api_key=secret"
+
+
+def test_duration_rounding(config):
+    payload = serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://example.com",
+        request_headers={},
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=None,
+        duration_s=1.5678,
+        library="requests",
+    )
+    assert payload["duration_ms"] == 1567
+
+
+@pytest.mark.parametrize(
+    "compress_fn",
+    [
+        pytest.param(gzip.compress, id="gzip"),
+        pytest.param(zlib.compress, id="deflate"),
+        pytest.param(lambda b: zlib.compress(b)[2:-4], id="raw-deflate"),
+    ],
+)
+def test_compressed_body_auto_decompressed(config, compress_fn):
+    """Compressed bytes (e.g. from httpx raw stream) are decoded transparently."""
+    compressed = compress_fn(b'{"message":"hello"}')
+    payload = serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://example.com",
+        request_headers={},
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=compressed,
+        duration_s=0.1,
+        library="httpx",
+    )
+    assert payload["response"]["body"] == '{"message":"hello"}'
+
+
+def test_corrupt_compressed_bytes_falls_back_to_binary(config):
+    body = b"\x1f\x8b" + b"\x00" * 20
+    payload = serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://example.com",
+        request_headers={},
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=body,
+        duration_s=0.1,
+        library="httpx",
+    )
+    assert payload["response"]["body"] == "[binary: 22 bytes]"
+
+
+def test_zip_bomb_capped(config):
+    """A tiny gzip payload expanding to 10x MAX_DECOMPRESSED is rejected via max_length truncation."""
+    bomb = gzip.compress(b"\x00" * (MAX_DECOMPRESSED * 10))
+    payload = serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://example.com",
+        request_headers={},
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=bomb,
+        duration_s=0.1,
+        library="httpx",
+    )
+    assert payload["response"]["body"].startswith("[binary:")
+
+
+def test_compressed_body_exactly_at_limit(config):
+    """Payload decompressing to exactly MAX_DECOMPRESSED bytes is accepted."""
+    body = gzip.compress(b"x" * MAX_DECOMPRESSED)
+    payload = serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://example.com",
+        request_headers={},
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=body,
+        duration_s=0.1,
+        library="httpx",
+    )
+    assert payload["response"]["body"] == "x" * MAX_DECOMPRESSED
+
+
+def test_compressed_non_utf8_binary_falls_back(config):
+    """Gzip-compressed binary that isn't valid UTF-8 falls back to [binary:]."""
+    body = gzip.compress(bytes(range(256)))
+    payload = serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://example.com",
+        request_headers={},
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=body,
+        duration_s=0.1,
+        library="httpx",
+    )
+    assert payload["response"]["body"].startswith("[binary:")
+
+
+def test_truncated_gzip_stream_falls_back_to_binary(config):
+    """A truncated gzip stream is rejected even if partial decompression succeeds."""
+    truncated = gzip.compress(b'{"message":"hello"}')[:-1]
+    payload = serialize_request_response(
+        config=config,
+        method="GET",
+        url="https://example.com",
+        request_headers={},
+        request_body=None,
+        status_code=200,
+        response_headers={},
+        response_body=truncated,
+        duration_s=0.1,
+        library="httpx",
+    )
+    assert payload["response"]["body"].startswith("[binary:")
