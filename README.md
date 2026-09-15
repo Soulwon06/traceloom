@@ -10,7 +10,7 @@
 
 TraceLoom 是一个本地可读性观测工具：捕获 Python 应用运行时的 HTTP 请求、LLM 调用、测试、日志和异常，并把它们组织成可筛选、可回看的事件时间线。
 
-[![GitHub](https://img.shields.io/badge/GitHub-milky731%2Ftraceloom-181717?logo=github)](https://github.com/milky731/traceloom)
+[![GitHub](https://img.shields.io/badge/GitHub-Soulwon06%2Ftraceloom-181717?logo=github)](https://github.com/Soulwon06/traceloom)
 
 ## 为什么做 TraceLoom
 
@@ -51,7 +51,7 @@ LLM View 是阅读层：它不改变 Provider 的原始格式，也不把不同 
 ### 启动 Dashboard
 
 ```bash
-git clone https://github.com/milky731/traceloom.git
+git clone https://github.com/Soulwon06/traceloom.git
 cd traceloom
 uv sync --frozen
 ```
